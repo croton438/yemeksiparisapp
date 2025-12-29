@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../data/restaurant_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../models/models.dart';
 import '../widgets/cached_image.dart';
 import 'restaurant_page.dart';
@@ -10,31 +11,20 @@ class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
   final _search = TextEditingController();
+  final _sb = Supabase.instance.client;
 
   String _selectedCuisine = 'Hepsi';
   HomeSort _sort = HomeSort.rating;
 
   late Future<List<Restaurant>> _future;
 
-  // ✅ UI tarafında restoran -> yemek türü map’i.
-  // Supabase'e cuisine alanını ekleyince bunu DB’den okuyacağız.
-  final Map<String, String> _cuisineByRestaurantId = const {
-    'r1': 'Burger',
-    'r2': 'Pizza',
-    'r3': 'Döner',
-    'r4': 'Sağlıklı',
-    'r5': 'Asya',
-    'r6': 'Meksika',
-    'r7': 'Kebap',
-    'r8': 'Tatlı',
-    'r9': 'Kahve',
-    'r10': 'Tavuk',
-  };
+  // ✅ DB’den cuisine okuyacağız (artık hardcoded map yok)
+  final Map<String, String> _cuisineByRestaurantId = {};
 
   List<String> get _cuisines {
     final set = <String>{'Hepsi', ..._cuisineByRestaurantId.values};
@@ -47,7 +37,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _future = RestaurantService.getRestaurants();
+    _future = _loadRestaurants();
   }
 
   @override
@@ -56,9 +46,46 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  Future<List<Restaurant>> _loadRestaurants() async {
+    final res = await _sb
+        .from('restaurants')
+        .select(
+            'id,name,hero_image_url,min_order_tl,min_delivery_min,max_delivery_min,rating,description,is_open,cuisine')
+        .order('rating', ascending: false);
+
+    final rows = (res as List).cast<Map<String, dynamic>>();
+
+    _cuisineByRestaurantId.clear();
+
+    final list = rows.map((m) {
+      final id = m['id'].toString();
+
+      // cuisine varsa map’e yaz (UI filter + pill için)
+      final cuisine = (m['cuisine'] ?? '').toString().trim();
+      if (cuisine.isNotEmpty) {
+        _cuisineByRestaurantId[id] = cuisine;
+      }
+
+      final desc = (m['description'] ?? '').toString();
+
+      return Restaurant(
+        id: id,
+        name: (m['name'] ?? '').toString(),
+        heroImageUrl: (m['hero_image_url'] ?? '').toString(),
+        minOrderTl: (m['min_order_tl'] ?? 0) as int,
+        minDeliveryMin: (m['min_delivery_min'] ?? 0) as int,
+        maxDeliveryMin: (m['max_delivery_min'] ?? 0) as int,
+        rating: (m['rating'] is num) ? (m['rating'] as num).toDouble() : 0.0,
+        description: desc,
+      );
+    }).toList();
+
+    return list;
+  }
+
   Future<void> _refresh() async {
     setState(() {
-      _future = RestaurantService.getRestaurants();
+      _future = _loadRestaurants();
     });
     await _future;
   }
@@ -74,8 +101,9 @@ class _HomePageState extends State<HomePage> {
     final q = _search.text.trim().toLowerCase();
 
     var list = input.where((r) {
-      final cuisine = _cuisineByRestaurantId[r.id] ?? 'Hepsi';
-      final matchesCuisine = _selectedCuisine == 'Hepsi' || cuisine == _selectedCuisine;
+      final cuisine = _cuisineByRestaurantId[r.id] ?? '';
+      final matchesCuisine =
+          _selectedCuisine == 'Hepsi' || cuisine == _selectedCuisine;
       final matchesSearch = q.isEmpty || r.name.toLowerCase().contains(q);
       return matchesCuisine && matchesSearch;
     }).toList();
@@ -116,7 +144,10 @@ class _HomePageState extends State<HomePage> {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
               children: [
                 const SizedBox(height: 6),
-                const Text('Merhaba 👋', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+                const Text(
+                  'Merhaba ',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                ),
                 const SizedBox(height: 10),
                 _SoftCard(
                   radius: 18,
@@ -124,11 +155,17 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Bağlantı hatası', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const Text(
+                        'Bağlantı hatası',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
                       const SizedBox(height: 6),
                       Text(
                         snap.error.toString(),
-                        style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          color: Theme.of(context).hintColor,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       FilledButton(
@@ -142,11 +179,12 @@ class _HomePageState extends State<HomePage> {
             );
           }
 
-          final allRestaurants = snap.data ?? [];
+          final allRestaurants = snap.data ?? <Restaurant>[];
           final popularRestaurants = _popular(allRestaurants);
 
           final filteredAll = _applyFilterSort(allRestaurants);
           final filteredPopular = _applyFilterSort(popularRestaurants);
+
           final featured = filteredAll.take(5).toList();
 
           return RefreshIndicator(
@@ -155,20 +193,26 @@ class _HomePageState extends State<HomePage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               children: [
                 const SizedBox(height: 6),
-                const Text('Merhaba 👋', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+                const Text(
+                  'Merhaba ',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                ),
                 const SizedBox(height: 6),
                 Text(
                   'Ne yemeyi düşünüyorsun?',
-                  style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: Theme.of(context).hintColor,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 14),
-
                 _SearchBox(
                   controller: _search,
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 12),
 
+                // ✅ Cuisine pills artık DB’den doluyor
                 SizedBox(
                   height: 40,
                   child: ListView.separated(
@@ -178,6 +222,7 @@ class _HomePageState extends State<HomePage> {
                     itemBuilder: (_, i) {
                       final c = _cuisines[i];
                       final selected = c == _selectedCuisine;
+
                       return _ChipPill(
                         label: c,
                         selected: selected,
@@ -186,11 +231,18 @@ class _HomePageState extends State<HomePage> {
                     },
                   ),
                 ),
+
                 const SizedBox(height: 12),
 
                 Row(
                   children: [
-                    Text('Sırala', style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700)),
+                    Text(
+                      'Sırala',
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(width: 10),
                     _SortPill(
                       label: 'Puan',
@@ -210,11 +262,19 @@ class _HomePageState extends State<HomePage> {
                       onTap: () => setState(() => _sort = HomeSort.etaFast),
                     ),
                     const Spacer(),
-                    Icon(Icons.cloud_done_rounded, size: 18, color: cs.primary.withOpacity(0.9)),
+                    Icon(Icons.cloud_done_rounded,
+                        size: 18, color: cs.primary.withOpacity(0.9)),
                     const SizedBox(width: 6),
-                    Text('Live', style: TextStyle(color: cs.primary, fontWeight: FontWeight.w900)),
+                    Text(
+                      'Live',
+                      style: TextStyle(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ],
                 ),
+
                 const SizedBox(height: 16),
 
                 const _SectionTitle(title: 'Öne çıkanlar'),
@@ -224,6 +284,7 @@ class _HomePageState extends State<HomePage> {
                   cuisineById: _cuisineByRestaurantId,
                   onTap: _goRestaurant,
                 ),
+
                 const SizedBox(height: 18),
 
                 const _SectionTitle(title: 'Popüler'),
@@ -255,7 +316,10 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.only(top: 20),
                     child: Text(
                       'Sonuç bulunamadı.',
-                      style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   )
                 else
@@ -306,7 +370,11 @@ class _HomeSkeleton extends StatelessWidget {
         const SizedBox(height: 10),
         bar(220, 16),
         const SizedBox(height: 18),
-        _SoftCard(radius: 16, padding: const EdgeInsets.all(16), child: bar(double.infinity, 20)),
+        _SoftCard(
+          radius: 16,
+          padding: const EdgeInsets.all(16),
+          child: bar(double.infinity, 20),
+        ),
         const SizedBox(height: 14),
         SizedBox(
           height: 40,
@@ -318,13 +386,26 @@ class _HomeSkeleton extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        _SoftCard(radius: 22, child: SizedBox(height: 210, child: bar(double.infinity, 210))),
+        _SoftCard(
+          radius: 22,
+          child: SizedBox(height: 210, child: bar(double.infinity, 210)),
+        ),
         const SizedBox(height: 18),
         Row(
           children: [
-            Expanded(child: _SoftCard(radius: 20, child: SizedBox(height: 162, child: bar(double.infinity, 162)))),
+            Expanded(
+              child: _SoftCard(
+                radius: 20,
+                child: SizedBox(height: 162, child: bar(double.infinity, 162)),
+              ),
+            ),
             const SizedBox(width: 12),
-            Expanded(child: _SoftCard(radius: 20, child: SizedBox(height: 162, child: bar(double.infinity, 162)))),
+            Expanded(
+              child: _SoftCard(
+                radius: 20,
+                child: SizedBox(height: 162, child: bar(double.infinity, 162)),
+              ),
+            ),
           ],
         ),
       ],
@@ -334,11 +415,13 @@ class _HomeSkeleton extends StatelessWidget {
 
 class _SectionTitle extends StatelessWidget {
   final String title;
+
   const _SectionTitle({required this.title});
 
   @override
   Widget build(BuildContext context) {
-    return Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900));
+    return Text(title,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900));
   }
 }
 
@@ -372,7 +455,8 @@ class _ChipPill extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _ChipPill({required this.label, required this.selected, required this.onTap});
+  const _ChipPill(
+      {required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -407,7 +491,8 @@ class _SortPill extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _SortPill({required this.label, required this.selected, required this.onTap});
+  const _SortPill(
+      {required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -428,7 +513,9 @@ class _SortPill extends StatelessWidget {
             label,
             style: TextStyle(
               fontWeight: FontWeight.w900,
-              color: selected ? Theme.of(context).colorScheme.primary : Theme.of(context).hintColor,
+              color: selected
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).hintColor,
             ),
           ),
         ),
@@ -477,6 +564,7 @@ class _FeaturedCarouselState extends State<_FeaturedCarousel> {
             itemBuilder: (_, i) {
               final r = widget.restaurants[i];
               final cuisine = widget.cuisineById[r.id] ?? '';
+
               return Padding(
                 padding: const EdgeInsets.only(right: 10),
                 child: _FeaturedCard(
@@ -517,7 +605,8 @@ class _FeaturedCard extends StatelessWidget {
   final String cuisine;
   final VoidCallback onTap;
 
-  const _FeaturedCard({required this.restaurant, required this.cuisine, required this.onTap});
+  const _FeaturedCard(
+      {required this.restaurant, required this.cuisine, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -557,12 +646,14 @@ class _FeaturedCard extends StatelessWidget {
               children: [
                 if (cuisine.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(999),
                       color: Colors.black.withOpacity(0.35),
                     ),
-                    child: Text(cuisine, style: const TextStyle(fontWeight: FontWeight.w900)),
+                    child: Text(cuisine,
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
                   ),
                 const SizedBox(height: 10),
                 Text(
@@ -574,13 +665,16 @@ class _FeaturedCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Text('Min. ${restaurant.minOrderTl} ₺', style: const TextStyle(fontWeight: FontWeight.w800)),
+                    Text('Min. ${restaurant.minOrderTl} ₺',
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
                     const SizedBox(width: 10),
-                    Text(restaurant.eta, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    Text(restaurant.eta,
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
                     const SizedBox(width: 10),
                     const Icon(Icons.star_rounded, size: 18),
                     const SizedBox(width: 4),
-                    Text(restaurant.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.w900)),
+                    Text(restaurant.rating.toStringAsFixed(1),
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
                   ],
                 ),
               ],
@@ -597,7 +691,8 @@ class _PopularCard extends StatelessWidget {
   final String cuisine;
   final VoidCallback onTap;
 
-  const _PopularCard({required this.restaurant, required this.cuisine, required this.onTap});
+  const _PopularCard(
+      {required this.restaurant, required this.cuisine, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -638,12 +733,14 @@ class _PopularCard extends StatelessWidget {
                       left: 10,
                       top: 10,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(999),
                           color: Colors.black.withOpacity(0.35),
                         ),
-                        child: Text(cuisine, style: const TextStyle(fontWeight: FontWeight.w900)),
+                        child: Text(cuisine,
+                            style: const TextStyle(fontWeight: FontWeight.w900)),
                       ),
                     ),
                 ],
@@ -670,12 +767,18 @@ class _PopularCard extends StatelessWidget {
                             restaurant.eta,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                              color: Theme.of(context).hintColor,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                         const Icon(Icons.star_rounded, size: 16),
                         const SizedBox(width: 4),
-                        Text(restaurant.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.w900)),
+                        Text(
+                          restaurant.rating.toStringAsFixed(1),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
                       ],
                     ),
                   ],
@@ -694,7 +797,8 @@ class _ListRowCard extends StatelessWidget {
   final String cuisine;
   final VoidCallback onTap;
 
-  const _ListRowCard({required this.restaurant, required this.cuisine, required this.onTap});
+  const _ListRowCard(
+      {required this.restaurant, required this.cuisine, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -718,29 +822,47 @@ class _ListRowCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(restaurant.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+                Text(restaurant.name,
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
                 const SizedBox(height: 6),
                 Row(
                   children: [
                     if (cuisine.isNotEmpty) ...[
-                      Text(cuisine, style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700)),
+                      Text(
+                        cuisine,
+                        style: TextStyle(
+                          color: Theme.of(context).hintColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       const SizedBox(width: 10),
                     ],
                     Text(
                       'Min. ${restaurant.minOrderTl} ₺',
-                      style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Text(restaurant.eta,
-                        style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700)),
+                    Text(
+                      restaurant.eta,
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(width: 10),
                     const Icon(Icons.star_rounded, size: 16),
                     const SizedBox(width: 4),
-                    Text(restaurant.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.w900)),
+                    Text(
+                      restaurant.rating.toStringAsFixed(1),
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ],
                 ),
               ],
