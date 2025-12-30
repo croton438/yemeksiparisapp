@@ -1,3 +1,8 @@
+// CHANGE PLAN:
+// - RestaurantPage hata ekranında back/çıkış yok; kullanıcı kilitleniyor.
+// - Hata/loading durumlarına AppBar/back ekleyip "Tekrar dene" + "Listeye dön" aksiyonları ekleyeceğim.
+// - Menü listesi, kart UI'ları ve sepet akışına dokunmayacağım.
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -9,6 +14,7 @@ import '../../data/category_service.dart';
 import '../../models/models.dart';
 import '../../state/cart_store.dart';
 import '../sheets/product_customize_sheet.dart';
+import '../shell/app_shell.dart';
 import '../widgets/cart_sheet.dart';
 import '../widgets/topbar.dart';
 import '../widgets/cached_image.dart';
@@ -89,6 +95,24 @@ class _RestaurantPageState extends State<RestaurantPage> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    _loadRestaurantData();
+  }
+
+  Future<void> _handleBackToList() async {
+    final popped = await Navigator.of(context).maybePop();
+    if (!popped && mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AppShell()),
+        (route) => false,
+      );
     }
   }
 
@@ -178,6 +202,13 @@ class _RestaurantPageState extends State<RestaurantPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            onPressed: _handleBackToList,
+            icon: const Icon(Icons.arrow_back),
+          ),
+          title: const Text('Restoran'),
+        ),
         body: SafeArea(
           child: Center(
             child: Column(
@@ -198,6 +229,19 @@ class _RestaurantPageState extends State<RestaurantPage> {
 
     if (_error != null || restaurant == null) {
       return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            onPressed: _handleBackToList,
+            icon: const Icon(Icons.arrow_back),
+          ),
+          title: const Text('Restoran'),
+          actions: [
+            IconButton(
+              onPressed: _retryLoad,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -206,26 +250,25 @@ class _RestaurantPageState extends State<RestaurantPage> {
               children: [
                 Icon(Icons.error_outline, size: 64, color: Theme.of(context).colorScheme.error),
                 const SizedBox(height: 16),
-                Text(
+                const Text(
                   'Restoran yüklenemedi',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _error ?? 'Bilinmeyen hata',
+                  _error ?? 'Bilinmeyen bir sorun oluştu',
                   style: TextStyle(color: Theme.of(context).hintColor),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _isLoading = true;
-                      _error = null;
-                    });
-                    _loadRestaurantData();
-                  },
-                  child: const Text('Tekrar Dene'),
+                FilledButton(
+                  onPressed: _retryLoad,
+                  child: const Text('Tekrar dene'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton(
+                  onPressed: _handleBackToList,
+                  child: const Text('Restoran listesine dön'),
                 ),
               ],
             ),

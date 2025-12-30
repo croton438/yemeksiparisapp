@@ -1,3 +1,8 @@
+// CHANGE PLAN:
+// - products sorgusundaki is_available filtresi şemada yok; fallback kategoride bu filtreyi kaldıracağım.
+// - Mevcut kategori çıkarma akışını koruyacağım, yeni kolon eklemeyeceğim.
+// - Ana servis yapısı ve error handling'e dokunmayacağım.
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 import '../core/network_helper.dart';
@@ -45,8 +50,7 @@ class CategoryService {
       final res = await _sb
           .from('products')
           .select('category_id,category_name')
-          .eq('restaurant_id', restaurantId)
-          .eq('is_available', true);
+          .eq('restaurant_id', restaurantId);
 
       final rows = (res as List).cast<Map<String, dynamic>>();
       final categoryMap = <String, String>{};
