@@ -1,3 +1,7 @@
+// CHANGE PLAN:
+// - CartItem eklerken selections json'u da saklayacağım, mevcut fiyat/restaurant akışını bozmayacağım.
+// - API imzasını minimal genişletip var olan çağrıları güncelleyeceğim.
+
 import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 
@@ -35,6 +39,7 @@ class CartStore extends ChangeNotifier {
     required int quantity,
     Map<String, List<ProductOptionItem>> selectedOptions = const {},
     List<String> selectedAddOnIds = const [],
+    Map<String, dynamic> selections = const {},
   }) {
     // restaurant set
     _restaurant ??= restaurant;
@@ -53,6 +58,7 @@ class CartStore extends ChangeNotifier {
         quantity: quantity,
         selectedOptions: Map.of(selectedOptions),
         selectedAddOnIds: List.of(selectedAddOnIds),
+        selections: Map.of(selections),
       ),
     );
     notifyListeners();
@@ -72,6 +78,7 @@ class CartStore extends ChangeNotifier {
         quantity: q,
         selectedOptions: old.selectedOptions,
         selectedAddOnIds: old.selectedAddOnIds,
+        selections: old.selections,
       );
     }
 

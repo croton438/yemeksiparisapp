@@ -1,3 +1,8 @@
+// CHANGE PLAN:
+// - CartItem içine selections json'u ekleyip option seçimlerini saklayacağım.
+// - Mevcut selectedOptions ve toplam hesaplarını koruyacağım.
+// - Var olan constructor alanlarını bozmayacağım.
+
 import 'package:flutter/foundation.dart';
 import 'product.dart';
 
@@ -13,12 +18,16 @@ class CartItem {
   /// AddOn id listesi
   final List<String> selectedAddOnIds;
 
+  /// Seçimlerin json özetleri (checkout için)
+  final Map<String, dynamic> selections;
+
   const CartItem({
     required this.id,
     required this.product,
     required this.quantity,
     this.selectedOptions = const {},
     this.selectedAddOnIds = const [],
+    this.selections = const {},
   });
 
   /// Tek ürün fiyatı (opsiyon + addon dahil)

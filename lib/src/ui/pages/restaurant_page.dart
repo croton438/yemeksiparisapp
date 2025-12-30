@@ -1,24 +1,19 @@
-// CHANGE PLAN:
-// - RestaurantPage hata ekranında back/çıkış yok; kullanıcı kilitleniyor.
-// - Hata/loading durumlarına AppBar/back ekleyip "Tekrar dene" + "Listeye dön" aksiyonları ekleyeceğim.
-// - Menü listesi, kart UI'ları ve sepet akışına dokunmayacağım.
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../data/restaurant_service.dart';
-import '../../data/product_service.dart';
 import '../../data/category_service.dart';
+import '../../data/product_service.dart';
+import '../../data/restaurant_service.dart';
 import '../../models/models.dart';
 import '../../state/cart_store.dart';
 import '../sheets/product_customize_sheet.dart';
 import '../shell/app_shell.dart';
-import '../widgets/cart_sheet.dart';
-import '../widgets/topbar.dart';
-import '../widgets/cached_image.dart';
 import '../widgets/app_card.dart';
+import '../widgets/cart_sheet.dart';
+import '../widgets/cached_image.dart';
+import '../widgets/topbar.dart';
 
 class RestaurantPage extends StatefulWidget {
   final String restaurantId;
@@ -30,6 +25,7 @@ class RestaurantPage extends StatefulWidget {
 
 class _RestaurantPageState extends State<RestaurantPage> {
   Restaurant? restaurant;
+
   List<Category> cats = [];
   List<Product> _allProducts = [];
   List<Product> _popularProducts = [];
@@ -40,7 +36,8 @@ class _RestaurantPageState extends State<RestaurantPage> {
 
   // Anchors
   final _popularKey = GlobalKey();
-  Map<String, GlobalKey> _categoryKeys = {};
+  final _allKey = GlobalKey();
+  final Map<String, GlobalKey> _categoryKeys = {};
 
   // Active highlight
   String _activeSectionId = '__popular__';
@@ -63,7 +60,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
       final restaurants = await RestaurantService.getRestaurants();
       final found = restaurants.firstWhere(
         (r) => r.id == widget.restaurantId,
-        orElse: () => restaurants.first,
+        orElse: () => restaurants.isNotEmpty ? restaurants.first : throw Exception('Restaurant not found'),
       );
 
       // Categories ve Products'ı paralel çek
@@ -72,29 +69,45 @@ class _RestaurantPageState extends State<RestaurantPage> {
         ProductService.getProductsByRestaurant(widget.restaurantId),
       ]);
 
-      final categories = results[0] as List<Category>;
-      final products = results[1] as List<Product>;
+      final categories = (results[0] as List).cast<Category>();
+      final products = (results[1] as List).cast<Product>();
 
-      if (mounted) {
-        setState(() {
-          restaurant = found;
-          cats = categories;
-          _allProducts = products;
-          _popularProducts = products.take(5).toList(); // İlk 5 ürünü popüler olarak göster
-          _categoryKeys = {for (final c in cats) c.id: GlobalKey()};
-          _productsByCategory = {
-            for (final c in cats) c.id: products.where((p) => p.categoryId == c.id).toList(),
-          };
-          _isLoading = false;
-        });
+      // Popüler: önce isPopular true olanlar, yoksa ilk 5
+      final popular = products.where((p) => p.isPopular).toList();
+      final popularResolved = popular.isNotEmpty ? popular.take(10).toList() : products.take(5).toList();
+
+      // Kategori bazlı map (category_id null olanlar "Diğer")
+      final Map<String, List<Product>> byCat = {};
+      for (final p in products) {
+        final cid = (p.categoryId == null || p.categoryId!.isEmpty) ? '__other__' : p.categoryId!;
+        byCat.putIfAbsent(cid, () => []);
+        byCat[cid]!.add(p);
       }
+
+      if (!mounted) return;
+      setState(() {
+        restaurant = found;
+        cats = categories;
+        _allProducts = products;
+        _popularProducts = popularResolved;
+
+        _categoryKeys
+          ..clear()
+          ..addAll({for (final c in cats) c.id: GlobalKey()});
+        // "Diğer" anchor (category_id null ürünler varsa)
+        if (byCat.containsKey('__other__')) {
+          _categoryKeys['__other__'] = GlobalKey();
+        }
+
+        _productsByCategory = byCat;
+        _isLoading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _isLoading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
     }
   }
 
@@ -135,7 +148,10 @@ class _RestaurantPageState extends State<RestaurantPage> {
 
     final candidates = <_SectionCandidate>[
       _SectionCandidate(id: '__popular__', key: _popularKey),
+      _SectionCandidate(id: '__all__', key: _allKey),
       ...cats.map((c) => _SectionCandidate(id: c.id, key: _categoryKeys[c.id]!)),
+      if (_categoryKeys.containsKey('__other__'))
+        _SectionCandidate(id: '__other__', key: _categoryKeys['__other__']!),
     ];
 
     final topDy = 110.0;
@@ -147,10 +163,8 @@ class _RestaurantPageState extends State<RestaurantPage> {
       if (ctx == null) continue;
       final ro = ctx.findRenderObject();
       if (ro is! RenderBox) continue;
-
       final dy = ro.localToGlobal(Offset.zero).dy;
       final score = (dy - topDy).abs();
-
       if (score < bestScore) {
         bestScore = score;
         bestId = s.id;
@@ -163,20 +177,13 @@ class _RestaurantPageState extends State<RestaurantPage> {
   }
 
   void _jumpToSection(String id) {
-    if (id == '__popular__') {
-      final ctx = _popularKey.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 420),
-          curve: Curves.easeOutCubic,
-          alignment: 0.05,
-        );
-      }
-      return;
-    }
+    GlobalKey? key;
+    if (id == '__popular__') key = _popularKey;
+    if (id == '__all__') key = _allKey;
+    if (id == '__other__') key = _categoryKeys['__other__'];
+    if (key == null && _categoryKeys.containsKey(id)) key = _categoryKeys[id];
 
-    final ctx = _categoryKeys[id]?.currentContext;
+    final ctx = key?.currentContext;
     if (ctx != null) {
       Scrollable.ensureVisible(
         ctx,
@@ -187,7 +194,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
     }
   }
 
-  // ✅ 1) önce name  2) name sonuç yoksa description
+  // ✅ 1) önce name 2) name sonuç yoksa description
   List<Product> _filterPreferNameThenDesc(List<Product> items, String q) {
     final query = q.trim().toLowerCase();
     if (query.isEmpty) return items;
@@ -216,10 +223,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
               children: [
                 CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 16),
-                Text(
-                  'Yükleniyor...',
-                  style: TextStyle(color: Theme.of(context).hintColor),
-                ),
+                Text('Yükleniyor...', style: TextStyle(color: Theme.of(context).hintColor)),
               ],
             ),
           ),
@@ -236,10 +240,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
           ),
           title: const Text('Restoran'),
           actions: [
-            IconButton(
-              onPressed: _retryLoad,
-              icon: const Icon(Icons.refresh_rounded),
-            ),
+            IconButton(onPressed: _retryLoad, icon: const Icon(Icons.refresh_rounded)),
           ],
         ),
         body: SafeArea(
@@ -261,15 +262,9 @@ class _RestaurantPageState extends State<RestaurantPage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: _retryLoad,
-                  child: const Text('Tekrar dene'),
-                ),
+                FilledButton(onPressed: _retryLoad, child: const Text('Tekrar dene')),
                 const SizedBox(height: 12),
-                OutlinedButton(
-                  onPressed: _handleBackToList,
-                  child: const Text('Restoran listesine dön'),
-                ),
+                OutlinedButton(onPressed: _handleBackToList, child: const Text('Restoran listesine dön')),
               ],
             ),
           ),
@@ -284,7 +279,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
     final hasQuery = q.trim().isNotEmpty;
 
     final popularFiltered = _filterPreferNameThenDesc(_popularProducts, q);
-    final allMatchedCount = hasQuery ? _filterPreferNameThenDesc(_allProducts, q).length : _allProducts.length;
+    final allFiltered = _filterPreferNameThenDesc(_allProducts, q);
 
     final slivers = <Widget>[
       SliverToBoxAdapter(
@@ -325,6 +320,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
         ),
       ),
 
+      // Hero
       SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -356,6 +352,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
 
       const SliverToBoxAdapter(child: SizedBox(height: 8)),
 
+      // Search
       SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -376,18 +373,20 @@ class _RestaurantPageState extends State<RestaurantPage> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
           child: Text(
-            hasQuery ? '$allMatchedCount sonuç' : ' ',
+            hasQuery ? '${allFiltered.length} sonuç' : ' ',
             style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700),
           ),
         ),
       ),
 
+      // Sticky Chips
       SliverPersistentHeader(
         pinned: true,
         delegate: _StickyHeaderDelegate(
           height: 56,
           child: _CategoryStickyBar(
             categories: cats,
+            hasOther: _productsByCategory.containsKey('__other__'),
             activeId: _activeSectionId,
             onTap: _jumpToSection,
           ),
@@ -396,23 +395,22 @@ class _RestaurantPageState extends State<RestaurantPage> {
 
       const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
+      // Popüler
       SliverToBoxAdapter(
+        key: _popularKey,
         child: Padding(
-          key: _popularKey,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
               const Text('Popüler', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
               const Spacer(),
               if (hasQuery)
-                Text(
-                  'Arama açık',
-                  style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700),
-                ),
+                Text('Arama açık', style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700)),
             ],
           ),
         ),
       ),
+
       const SliverToBoxAdapter(child: SizedBox(height: 10)),
 
       if (popularFiltered.isEmpty)
@@ -444,12 +442,44 @@ class _RestaurantPageState extends State<RestaurantPage> {
         ),
 
       const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+      // ✅ Tüm Ürünler (kategoriler boşsa bile her zaman var)
+      SliverToBoxAdapter(
+        key: _allKey,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _CategoryHeader(title: 'Tüm Ürünler'),
+        ),
+      ),
+      const SliverToBoxAdapter(child: SizedBox(height: 10)),
+      SliverList.separated(
+        itemCount: allFiltered.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (_, i) {
+          final p = allFiltered[i];
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _MenuCard(
+              restaurant: restaurant!,
+              product: p,
+              onAdd: () async {
+                await ProductCustomizeSheet.open(
+                  context: context,
+                  restaurant: restaurant!,
+                  product: p,
+                );
+              },
+            ),
+          );
+        },
+      ),
+      const SliverToBoxAdapter(child: SizedBox(height: 18)),
     ];
 
+    // Kategori bölümleri (varsa)
     for (final c in cats) {
       final base = _productsByCategory[c.id] ?? const <Product>[];
       final items = _filterPreferNameThenDesc(base, q);
-
       if (hasQuery && items.isEmpty) continue;
 
       slivers.addAll([
@@ -486,11 +516,47 @@ class _RestaurantPageState extends State<RestaurantPage> {
       ]);
     }
 
-    slivers.add(
-      SliverToBoxAdapter(
-        child: SizedBox(height: showCartBar ? 90 : 18),
-      ),
-    );
+    // Diğer (category_id null ürünler)
+    if (_productsByCategory.containsKey('__other__')) {
+      final base = _productsByCategory['__other__'] ?? const <Product>[];
+      final items = _filterPreferNameThenDesc(base, q);
+      if (!hasQuery || items.isNotEmpty) {
+        slivers.addAll([
+          SliverToBoxAdapter(
+            child: Padding(
+              key: _categoryKeys['__other__'],
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _CategoryHeader(title: 'Diğer'),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 10)),
+          SliverList.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (_, i) {
+              final p = items[i];
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _MenuCard(
+                  restaurant: restaurant!,
+                  product: p,
+                  onAdd: () async {
+                    await ProductCustomizeSheet.open(
+                      context: context,
+                      restaurant: restaurant!,
+                      product: p,
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 18)),
+        ]);
+      }
+    }
+
+    slivers.add(SliverToBoxAdapter(child: SizedBox(height: showCartBar ? 90 : 18)));
 
     return Scaffold(
       bottomNavigationBar: showCartBar
@@ -532,11 +598,13 @@ class _CategoryHeader extends StatelessWidget {
 
 class _CategoryStickyBar extends StatelessWidget {
   final List<Category> categories;
+  final bool hasOther;
   final String activeId;
   final void Function(String id) onTap;
 
   const _CategoryStickyBar({
     required this.categories,
+    required this.hasOther,
     required this.activeId,
     required this.onTap,
   });
@@ -545,7 +613,9 @@ class _CategoryStickyBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = <_StickyItem>[
       const _StickyItem(id: '__popular__', title: 'Popüler', icon: Icons.local_fire_department_rounded),
+      const _StickyItem(id: '__all__', title: 'Tüm Ürünler', icon: Icons.view_list_rounded),
       ...categories.map((c) => _StickyItem(id: c.id, title: c.title, icon: Icons.restaurant_menu_rounded)),
+      if (hasOther) const _StickyItem(id: '__other__', title: 'Diğer', icon: Icons.more_horiz_rounded),
     ];
 
     return Container(
@@ -559,7 +629,6 @@ class _CategoryStickyBar extends StatelessWidget {
         itemBuilder: (_, i) {
           final it = items[i];
           final selected = it.id == activeId;
-
           return ChoiceChip(
             selected: selected,
             onSelected: (_) => onTap(it.id),
@@ -585,7 +654,7 @@ class _StickyItem {
   const _StickyItem({required this.id, required this.title, required this.icon});
 }
 
-class _PopularProductCard extends StatefulWidget {
+class _PopularProductCard extends StatelessWidget {
   final Product product;
   final VoidCallback onTap;
 
@@ -595,125 +664,72 @@ class _PopularProductCard extends StatefulWidget {
   });
 
   @override
-  State<_PopularProductCard> createState() => _PopularProductCardState();
-}
-
-class _PopularProductCardState extends State<_PopularProductCard> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 150),
-      vsync: this,
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _controller.forward(),
-      onTapUp: (_) {
-        _controller.reverse();
-        widget.onTap();
-      },
-      onTapCancel: () => _controller.reverse(),
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: SizedBox(
-          width: 240,
-          child: AppCard(
-            onTap: widget.onTap,
-            radius: BorderRadius.circular(20),
-            color: Theme.of(context).colorScheme.surface.withAlpha((0.20 * 255).round()),
-            padding: const EdgeInsets.all(10),
-            child: Row(
-              children: [
-                Hero(
-                  tag: 'product_${widget.product.id}',
-                  child: CachedImg(
-                    url: widget.product.imageUrl,
-                    width: 78,
-                    height: 78,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 260,
-                    memCacheHeight: 260,
-                    borderRadius: BorderRadius.circular(16),
+    return SizedBox(
+      width: 240,
+      child: AppCard(
+        onTap: onTap,
+        radius: BorderRadius.circular(20),
+        color: Theme.of(context).colorScheme.surface.withAlpha((0.20 * 255).round()),
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          children: [
+            Hero(
+              tag: 'product_${product.id}',
+              child: CachedImg(
+                url: product.imageUrl,
+                width: 78,
+                height: 78,
+                fit: BoxFit.cover,
+                memCacheWidth: 260,
+                memCacheHeight: 260,
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(product.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  Text(
+                    product.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600, fontSize: 12),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const Spacer(),
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              widget.product.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w900),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(6),
-                              color: Theme.of(context).colorScheme.primary.withAlpha((0.2 * 255).round()),
-                            ),
-                            child: Icon(Icons.local_fire_department_rounded, size: 12, color: Theme.of(context).colorScheme.primary),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        widget.product.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600, fontSize: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          color: Theme.of(context).colorScheme.primary.withAlpha((0.15 * 255).round()),
+                        ),
+                        child: Text(
+                          '${product.priceTl} TL',
+                          style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary, fontSize: 13),
+                        ),
                       ),
                       const Spacer(),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              color: Theme.of(context).colorScheme.primary.withAlpha((0.15 * 255).round()),
-                            ),
-                            child: Text('${widget.product.priceTl},99 TL', style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary, fontSize: 13)),
-                          ),
-                          const Spacer(),
-                          Container(
-                            height: 32,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            alignment: Alignment.center,
-                            child: const Text('Ekle', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black, fontSize: 12)),
-                          ),
-                        ],
+                      Container(
+                        height: 32,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text('Ekle', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black, fontSize: 12)),
                       ),
                     ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -732,7 +748,6 @@ class _RestaurantCartBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartStore>();
-
     final remaining = restaurant.minOrderTl - cart.totalTl;
     final canCheckout = cart.canCheckout;
 
@@ -798,7 +813,7 @@ class _RestaurantCartBar extends StatelessWidget {
   }
 }
 
-class _MenuCard extends StatefulWidget {
+class _MenuCard extends StatelessWidget {
   final Restaurant restaurant;
   final Product product;
   final VoidCallback onAdd;
@@ -810,136 +825,76 @@ class _MenuCard extends StatefulWidget {
   });
 
   @override
-  State<_MenuCard> createState() => _MenuCardState();
-}
-
-class _MenuCardState extends State<_MenuCard> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 150),
-      vsync: this,
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _controller.forward(),
-      onTapUp: (_) {
-        _controller.reverse();
-        widget.onAdd();
-      },
-      onTapCancel: () => _controller.reverse(),
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: AppCard(
-          onTap: widget.onAdd,
-          radius: BorderRadius.circular(22),
-          color: Theme.of(context).colorScheme.surface.withAlpha((0.22 * 255).round()),
-          child: Row(
-            children: [
-              Hero(
-                tag: 'product_${widget.product.id}',
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(22), bottomLeft: Radius.circular(22)),
-                  child: CachedImg(
-                    url: widget.product.imageUrl,
-                    width: 92,
-                    height: 92,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 300,
-                    memCacheHeight: 300,
-                  ),
-                ),
+    return AppCard(
+      onTap: onAdd,
+      radius: BorderRadius.circular(22),
+      color: Theme.of(context).colorScheme.surface.withAlpha((0.22 * 255).round()),
+      child: Row(
+        children: [
+          Hero(
+            tag: 'product_${product.id}',
+            child: ClipRRect(
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(22), bottomLeft: Radius.circular(22)),
+              child: CachedImg(
+                url: product.imageUrl,
+                width: 92,
+                height: 92,
+                fit: BoxFit.cover,
+                memCacheWidth: 300,
+                memCacheHeight: 300,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(widget.product.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                          ),
-                          if (widget.product.isPopular)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(6),
-                                color: Theme.of(context).colorScheme.primary.withAlpha((0.2 * 255).round()),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.local_fire_department_rounded, size: 12, color: Theme.of(context).colorScheme.primary),
-                                  const SizedBox(width: 2),
-                                  Text('Popüler', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary)),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        widget.product.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600, fontSize: 13),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                            color: Theme.of(context).colorScheme.primary.withAlpha((0.15 * 255).round()),
-                            ),
-                            child: Text('${widget.product.priceTl},99 TL', style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary)),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: SizedBox(
-                  height: 40,
-                  child: FilledButton(
-                    onPressed: widget.onAdd,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                    ),
-                    child: const Text('Ekle', style: TextStyle(fontWeight: FontWeight.w900)),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(product.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  Text(
+                    product.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: Theme.of(context).colorScheme.primary.withAlpha((0.15 * 255).round()),
+                    ),
+                    child: Text(
+                      '${product.priceTl} TL',
+                      style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: SizedBox(
+              height: 40,
+              child: FilledButton(
+                onPressed: onAdd,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                child: const Text('Ekle', style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

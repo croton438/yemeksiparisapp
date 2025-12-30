@@ -1,7 +1,13 @@
+// CHANGE PLAN:
+// - Ürün özelleştirme sheet'i Supabase option_groups/option_items verisini çekmiyor; seçenekler boş kalıyor.
+// - Supabase'ten grupları ve item'ları çekip single/multi seçim, required ve max_select kurallarını UI'da enforce edeceğim.
+// - Sepete eklerken selections json'u CartItem'a ileteceğim, mevcut dark/glass UI'yı koruyacağım.
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/ui_tokens.dart';
+import '../../data/product_service.dart';
 import '../../models/models.dart';
 import '../../state/cart_store.dart';
 import '../widgets/cached_image.dart';
@@ -33,28 +39,73 @@ class _Body extends StatefulWidget {
 }
 
 class _BodyState extends State<_Body> {
-  final Map<String, String> selectedOptions = {};
+  final Map<String, String> _singleSelections = {};
+  final Map<String, Set<String>> _multiSelections = {};
   final Set<String> selectedAddOns = {};
   final Set<String> removedIngredients = {};
+  List<ProductOptionGroup> _optionGroups = [];
+  bool _loadingOptions = true;
+  String? _error;
 
   int qty = 1;
 
   @override
   void initState() {
     super.initState();
+    _loadOptions();
+  }
 
-    // requiredOne olan gruplarda default ilk seçeneği seç
-    for (final g in widget.product.optionGroups) {
-      if (g.requiredOne && g.items.isNotEmpty) {
-        selectedOptions[g.id] = g.items.first.id;
+  Future<void> _loadOptions() async {
+    setState(() {
+      _loadingOptions = true;
+      _error = null;
+    });
+
+    try {
+      final groups = await ProductService.getOptionGroups(widget.product.id);
+
+      for (final g in groups) {
+        if (g.type == OptionGroupType.single) {
+          final defaults = g.items.where((it) => it.isDefault).toList();
+          if (defaults.isNotEmpty) {
+            _singleSelections[g.id] = defaults.first.id;
+          } else if (g.requiredOne && g.items.isNotEmpty) {
+            _singleSelections[g.id] = g.items.first.id;
+          }
+        } else {
+          final defaults = g.items.where((it) => it.isDefault).map((it) => it.id).toList();
+          final max = g.maxSelect > 0 ? g.maxSelect : defaults.length;
+          _multiSelections[g.id] = defaults.take(max).toSet();
+          if ((_multiSelections[g.id]?.isEmpty ?? true) && g.requiredOne && g.items.isNotEmpty) {
+            _multiSelections[g.id] = {g.items.first.id};
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _optionGroups = groups;
+          _loadingOptions = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loadingOptions = false;
+        });
       }
     }
   }
 
   bool get _isSelectionValid {
-    for (final g in widget.product.optionGroups) {
-      if (g.requiredOne) {
-        final sel = selectedOptions[g.id];
+    for (final g in _optionGroups) {
+      if (!g.requiredOne) continue;
+      if (g.type == OptionGroupType.single) {
+        final sel = _singleSelections[g.id];
+        if (sel == null || sel.isEmpty) return false;
+      } else {
+        final sel = _multiSelections[g.id];
         if (sel == null || sel.isEmpty) return false;
       }
     }
@@ -64,11 +115,20 @@ class _BodyState extends State<_Body> {
   int get _unitTotalTl {
     int sum = widget.product.priceTl;
 
-    for (final g in widget.product.optionGroups) {
-      final sel = selectedOptions[g.id];
-      if (sel != null) {
-        final opt = g.items.firstWhere((e) => e.id == sel);
-        sum += opt.extraPriceTl;
+    for (final g in _optionGroups) {
+      if (g.items.isEmpty) continue;
+      if (g.type == OptionGroupType.single) {
+        final sel = _singleSelections[g.id];
+        if (sel != null) {
+          final opt = g.items.firstWhere((e) => e.id == sel, orElse: () => g.items.first);
+          sum += opt.extraPriceTl;
+        }
+      } else {
+        final sels = _multiSelections[g.id] ?? {};
+        for (final id in sels) {
+          final opt = g.items.firstWhere((e) => e.id == id, orElse: () => g.items.first);
+          sum += opt.extraPriceTl;
+        }
       }
     }
 
@@ -249,7 +309,29 @@ class _BodyState extends State<_Body> {
                           ],
 
                           // OPTION GROUPS
-                          if (p.optionGroups.isNotEmpty) ...[
+                          if (_loadingOptions) ...[
+                            const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
+                            const SizedBox(height: 12),
+                          ] else if (_error != null) ...[
+                            _SoftCard(
+                              radius: 18,
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Seçenekler yüklenemedi', style: TextStyle(fontWeight: FontWeight.w900)),
+                                  const SizedBox(height: 8),
+                                  Text(_error!, style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700)),
+                                  const SizedBox(height: 12),
+                                  FilledButton(
+                                    onPressed: _loadOptions,
+                                    child: const Text('Tekrar dene'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                          ] else if (_optionGroups.isNotEmpty) ...[
                             Row(
                               children: [
                                 const Text('Özelleştir', style: TextStyle(fontWeight: FontWeight.w900)),
@@ -261,93 +343,23 @@ class _BodyState extends State<_Body> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            for (final g in p.optionGroups) ...[
-                              _SoftCard(
-                                radius: 18,
-                                padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-                                child: Column(
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Text(g.title, style: const TextStyle(fontWeight: FontWeight.w900)),
-                                        const Spacer(),
-                                        if (g.requiredOne) _Pill(text: 'Zorunlu', bg: Theme.of(context).colorScheme.primary.withAlpha((0.14 * 255).round()), primary: true),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    ...g.items.map((it) {
-                                      final selected = selectedOptions[g.id] == it.id;
-                                      return Padding(
-                                        padding: const EdgeInsets.only(bottom: 8),
-                                        child: InkWell(
-                                          borderRadius: BorderRadius.circular(14),
-                                          onTap: () => setState(() => selectedOptions[g.id] = it.id),
-                                          child: AnimatedContainer(
-                                            duration: const Duration(milliseconds: 200),
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                            decoration: BoxDecoration(
-                                              borderRadius: BorderRadius.circular(14),
-                                              color: selected
-                                                  ? Theme.of(context).colorScheme.primary.withAlpha((0.18 * 255).round())
-                                                  : Theme.of(context).colorScheme.surface.withAlpha((0.16 * 255).round()),
-                                              border: selected
-                                                  ? Border.all(
-                                                      color: Theme.of(context).colorScheme.primary.withAlpha((0.4 * 255).round()),
-                                                      width: 1.5,
-                                                    )
-                                                  : null,
-                                              boxShadow: selected
-                                                  ? [
-                                                      BoxShadow(
-                                                        blurRadius: 8,
-                                                        offset: const Offset(0, 4),
-                                                        color: Theme.of(context).colorScheme.primary.withAlpha((0.2 * 255).round()),
-                                                      ),
-                                                    ]
-                                                  : null,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 24,
-                                                  height: 24,
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    border: Border.all(
-                                                      color: selected
-                                                          ? Theme.of(context).colorScheme.primary
-                                                          : Theme.of(context).hintColor.withAlpha((0.3 * 255).round()),
-                                                      width: 2,
-                                                    ),
-                                                    color: selected
-                                                        ? Theme.of(context).colorScheme.primary
-                                                        : Colors.transparent,
-                                                  ),
-                                                  child: selected
-                                                      ? const Icon(Icons.check, size: 16, color: Colors.black)
-                                                      : null,
-                                                ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  child: Text(it.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                                                ),
-                                                if (it.extraPriceTl > 0)
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                    decoration: BoxDecoration(
-                                                      borderRadius: BorderRadius.circular(8),
-                                                      color: Theme.of(context).colorScheme.surface.withAlpha((0.3 * 255).round()),
-                                                    ),
-                                                    child: Text('+${it.extraPriceTl} TL', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    }),
-                                  ],
-                                ),
+                            for (final g in _optionGroups) ...[
+                              _OptionGroupCard(
+                                group: g,
+                                singleSelections: _singleSelections,
+                                multiSelections: _multiSelections,
+                                onChangeSingle: (id) => setState(() => _singleSelections[g.id] = id),
+                                onToggleMulti: (id) => setState(() {
+                                  final current = _multiSelections[g.id] ?? <String>{};
+                                  final max = g.maxSelect;
+                                  if (current.contains(id)) {
+                                    current.remove(id);
+                                  } else {
+                                    if (max > 0 && current.length >= max) return;
+                                    current.add(id);
+                                  }
+                                  _multiSelections[g.id] = current;
+                                }),
                               ),
                               const SizedBox(height: 10),
                             ],
@@ -382,19 +394,54 @@ class _BodyState extends State<_Body> {
                       onInc: () => setState(() => qty = (qty + 1).clamp(1, 99)),
                       unitTl: _unitTotalTl,
                       totalTl: _totalTl,
-                      enabled: _isSelectionValid,
+                      enabled: !_loadingOptions && _isSelectionValid,
                       buttonText: removedIngredients.isEmpty ? 'Sepete ekle' : 'Sepete ekle • not var',
                       onAddToCart: () {
                         if (!_isSelectionValid) return;
 
                         // CartStore beklediği tipe çevir
+                        final groups = _optionGroups;
                         final Map<String, List<ProductOptionItem>> selected = {};
-                        for (final g in widget.product.optionGroups) {
-                          final chosenId = selectedOptions[g.id];
-                          if (chosenId == null) continue;
-                          final chosen = g.items.firstWhere((x) => x.id == chosenId);
-                          selected[g.id] = [chosen];
+                        for (final g in groups) {
+                          if (g.items.isEmpty) continue;
+                          if (g.type == OptionGroupType.single) {
+                            final chosenId = _singleSelections[g.id];
+                            if (chosenId == null) continue;
+                            final chosen = g.items.firstWhere((x) => x.id == chosenId, orElse: () => g.items.first);
+                            selected[g.id] = [chosen];
+                          } else {
+                            final ids = _multiSelections[g.id] ?? {};
+                            if (ids.isEmpty) continue;
+                            final list = <ProductOptionItem>[];
+                            for (final id in ids) {
+                              final item = g.items.firstWhere((x) => x.id == id, orElse: () => g.items.first);
+                              list.add(item);
+                            }
+                            selected[g.id] = list;
+                          }
                         }
+
+                        final selectionsJson = {
+                          'groups': groups
+                              .map((g) {
+                                final items = selected[g.id] ?? const [];
+                                if (items.isEmpty) return null;
+                                return {
+                                  'group_id': g.id,
+                                  'title': g.title,
+                                  'type': g.type == OptionGroupType.single ? 'single' : 'multi',
+                                  'items': items
+                                      .map((it) => {
+                                            'id': it.id,
+                                            'title': it.title,
+                                            'price_delta_tl': it.extraPriceTl,
+                                          })
+                                      .toList(),
+                                };
+                              })
+                              .where((e) => e != null)
+                              .toList(),
+                        };
 
                         // ✅ Çıkarılacaklar notunu, CartStore’a dokunmadan ürün description’a ekle
                         final Product productForCart = removedIngredients.isEmpty
@@ -408,7 +455,7 @@ class _BodyState extends State<_Body> {
                                 imageUrl: widget.product.imageUrl,
                                 priceTl: widget.product.priceTl,
                                 isPopular: widget.product.isPopular,
-                                optionGroups: widget.product.optionGroups,
+                                optionGroups: _optionGroups,
                                 addOns: widget.product.addOns,
                                 maxAddOn: widget.product.maxAddOn,
                               );
@@ -419,6 +466,7 @@ class _BodyState extends State<_Body> {
                               quantity: qty,
                               selectedOptions: selected,
                               selectedAddOnIds: selectedAddOns.toList(),
+                              selections: selectionsJson,
                             );
 
                         Navigator.pop(context);
@@ -754,6 +802,134 @@ class _BottomBar extends StatelessWidget {
           color: Theme.of(context).colorScheme.surface.withAlpha((0.18 * 255).round()),
         ),
         child: Icon(icon, size: 18),
+      ),
+    );
+  }
+}
+
+class _OptionGroupCard extends StatelessWidget {
+  final ProductOptionGroup group;
+  final Map<String, String> singleSelections;
+  final Map<String, Set<String>> multiSelections;
+  final ValueChanged<String> onChangeSingle;
+  final ValueChanged<String> onToggleMulti;
+
+  const _OptionGroupCard({
+    required this.group,
+    required this.singleSelections,
+    required this.multiSelections,
+    required this.onChangeSingle,
+    required this.onToggleMulti,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSingle = group.type == OptionGroupType.single;
+    final selectedSingle = singleSelections[group.id];
+    final selectedMulti = multiSelections[group.id] ?? <String>{};
+    final max = group.maxSelect;
+
+    return _SoftCard(
+      radius: 18,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text(group.title, style: const TextStyle(fontWeight: FontWeight.w900)),
+              const Spacer(),
+              if (group.requiredOne) _Pill(text: 'Zorunlu', bg: Theme.of(context).colorScheme.primary.withAlpha((0.14 * 255).round()), primary: true),
+              if (!group.requiredOne && max > 0) const SizedBox(width: 8),
+              if (max > 0 && !isSingle)
+                _Pill(
+                  text: 'En fazla $max',
+                  bg: Theme.of(context).colorScheme.surface.withAlpha((0.22 * 255).round()),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...group.items.map((it) {
+            final selected = isSingle ? selectedSingle == it.id : selectedMulti.contains(it.id);
+            final disabled = !selected && !isSingle && max > 0 && selectedMulti.length >= max;
+
+            return Opacity(
+              opacity: disabled ? 0.45 : 1,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: disabled
+                      ? null
+                      : () {
+                          if (isSingle) {
+                            onChangeSingle(it.id);
+                          } else {
+                            onToggleMulti(it.id);
+                          }
+                        },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: selected
+                          ? Theme.of(context).colorScheme.primary.withAlpha((0.18 * 255).round())
+                          : Theme.of(context).colorScheme.surface.withAlpha((0.16 * 255).round()),
+                      border: selected
+                          ? Border.all(
+                              color: Theme.of(context).colorScheme.primary.withAlpha((0.4 * 255).round()),
+                              width: 1.5,
+                            )
+                          : null,
+                      boxShadow: selected
+                          ? [
+                              BoxShadow(
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                                color: Theme.of(context).colorScheme.primary.withAlpha((0.2 * 255).round()),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            shape: isSingle ? BoxShape.circle : BoxShape.rectangle,
+                            borderRadius: isSingle ? null : BorderRadius.circular(6),
+                            border: Border.all(
+                              color: selected
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).hintColor.withAlpha((0.3 * 255).round()),
+                              width: 2,
+                            ),
+                            color: selected
+                                ? Theme.of(context).colorScheme.primary
+                                : Colors.transparent,
+                          ),
+                          child: selected ? const Icon(Icons.check, size: 16, color: Colors.black) : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text(it.title, style: const TextStyle(fontWeight: FontWeight.w800))),
+                        if (it.extraPriceTl > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              color: Theme.of(context).colorScheme.surface.withAlpha((0.3 * 255).round()),
+                            ),
+                            child: Text('+${it.extraPriceTl} TL', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
