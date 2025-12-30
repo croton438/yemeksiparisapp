@@ -172,7 +172,7 @@ class _BodyState extends State<_Body> {
                           const SizedBox(width: 6),
                           _Pill(
                             text: '${p.priceTl},99 TL',
-                            bg: Theme.of(context).colorScheme.surface.withOpacity(0.22),
+                            bg: Theme.of(context).colorScheme.surface.withAlpha((0.22 * 255).round()),
                           ),
                         ],
                       ),
@@ -271,7 +271,7 @@ class _BodyState extends State<_Body> {
                                       children: [
                                         Text(g.title, style: const TextStyle(fontWeight: FontWeight.w900)),
                                         const Spacer(),
-                                        if (g.requiredOne) _Pill(text: 'Zorunlu', bg: Theme.of(context).colorScheme.primary.withOpacity(0.14), primary: true),
+                                        if (g.requiredOne) _Pill(text: 'Zorunlu', bg: Theme.of(context).colorScheme.primary.withAlpha((0.14 * 255).round()), primary: true),
                                       ],
                                     ),
                                     const SizedBox(height: 10),
@@ -282,28 +282,64 @@ class _BodyState extends State<_Body> {
                                         child: InkWell(
                                           borderRadius: BorderRadius.circular(14),
                                           onTap: () => setState(() => selectedOptions[g.id] = it.id),
-                                          child: Container(
+                                          child: AnimatedContainer(
+                                            duration: const Duration(milliseconds: 200),
                                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                                             decoration: BoxDecoration(
                                               borderRadius: BorderRadius.circular(14),
-                                              // ❌ Border yok -> soft görünüm
                                               color: selected
-                                                  ? Theme.of(context).colorScheme.primary.withOpacity(0.14)
-                                                  : Theme.of(context).colorScheme.surface.withOpacity(0.16),
+                                                  ? Theme.of(context).colorScheme.primary.withAlpha((0.18 * 255).round())
+                                                  : Theme.of(context).colorScheme.surface.withAlpha((0.16 * 255).round()),
+                                              border: selected
+                                                  ? Border.all(
+                                                      color: Theme.of(context).colorScheme.primary.withAlpha((0.4 * 255).round()),
+                                                      width: 1.5,
+                                                    )
+                                                  : null,
+                                              boxShadow: selected
+                                                  ? [
+                                                      BoxShadow(
+                                                        blurRadius: 8,
+                                                        offset: const Offset(0, 4),
+                                                        color: Theme.of(context).colorScheme.primary.withAlpha((0.2 * 255).round()),
+                                                      ),
+                                                    ]
+                                                  : null,
                                             ),
                                             child: Row(
                                               children: [
-                                                Icon(
-                                                  selected ? Icons.radio_button_checked : Icons.radio_button_off,
-                                                  size: 18,
-                                                  color: selected ? Theme.of(context).colorScheme.primary : Theme.of(context).hintColor,
+                                                Container(
+                                                  width: 24,
+                                                  height: 24,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    border: Border.all(
+                                                      color: selected
+                                                          ? Theme.of(context).colorScheme.primary
+                                                          : Theme.of(context).hintColor.withAlpha((0.3 * 255).round()),
+                                                      width: 2,
+                                                    ),
+                                                    color: selected
+                                                        ? Theme.of(context).colorScheme.primary
+                                                        : Colors.transparent,
+                                                  ),
+                                                  child: selected
+                                                      ? const Icon(Icons.check, size: 16, color: Colors.black)
+                                                      : null,
                                                 ),
-                                                const SizedBox(width: 10),
+                                                const SizedBox(width: 12),
                                                 Expanded(
                                                   child: Text(it.title, style: const TextStyle(fontWeight: FontWeight.w800)),
                                                 ),
                                                 if (it.extraPriceTl > 0)
-                                                  Text('+${it.extraPriceTl} TL', style: const TextStyle(fontWeight: FontWeight.w900)),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      borderRadius: BorderRadius.circular(8),
+                                                      color: Theme.of(context).colorScheme.surface.withAlpha((0.3 * 255).round()),
+                                                    ),
+                                                    child: Text('+${it.extraPriceTl} TL', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+                                                  ),
                                               ],
                                             ),
                                           ),
@@ -437,25 +473,61 @@ class _BodyState extends State<_Body> {
                             }
                           });
                         },
-                  child: Container(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
-                      // ❌ Border yok
                       color: checked
-                          ? Theme.of(context).colorScheme.primary.withOpacity(0.14)
-                          : Theme.of(context).colorScheme.surface.withOpacity(0.16),
+                          ? Theme.of(context).colorScheme.primary.withAlpha((0.18 * 255).round())
+                          : Theme.of(context).colorScheme.surface.withAlpha((0.16 * 255).round()),
+                      border: checked
+                          ? Border.all(
+                              color: Theme.of(context).colorScheme.primary.withAlpha((0.4 * 255).round()),
+                              width: 1.5,
+                            )
+                          : null,
+                      boxShadow: checked
+                          ? [
+                              BoxShadow(
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                                color: Theme.of(context).colorScheme.primary.withAlpha((0.2 * 255).round()),
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Row(
                       children: [
-                        Icon(
-                          checked ? Icons.check_box : Icons.check_box_outline_blank,
-                          size: 18,
-                          color: checked ? Theme.of(context).colorScheme.primary : Theme.of(context).hintColor,
+                        Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: checked
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).hintColor.withAlpha((0.3 * 255).round()),
+                              width: 2,
+                            ),
+                            color: checked
+                                ? Theme.of(context).colorScheme.primary
+                                : Colors.transparent,
+                          ),
+                          child: checked
+                              ? const Icon(Icons.check, size: 16, color: Colors.black)
+                              : null,
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 12),
                         Expanded(child: Text(a.title, style: const TextStyle(fontWeight: FontWeight.w800))),
-                        Text('+${a.priceTl} TL', style: const TextStyle(fontWeight: FontWeight.w900)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            color: Theme.of(context).colorScheme.surface.withAlpha((0.3 * 255).round()),
+                          ),
+                          child: Text('+${a.priceTl} TL', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+                        ),
                       ],
                     ),
                   ),
@@ -487,12 +559,12 @@ class _SoftCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
         // ✅ Border yok, sadece soft yüzey + hafif gölge
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.18),
+        color: Theme.of(context).colorScheme.surface.withAlpha((0.18 * 255).round()),
         boxShadow: [
           BoxShadow(
             blurRadius: 22,
             offset: const Offset(0, 12),
-            color: Colors.black.withOpacity(0.28),
+            color: Colors.black.withAlpha((0.28 * 255).round()),
           ),
         ],
       ),
@@ -539,8 +611,8 @@ class _ChipToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = selected
-        ? Theme.of(context).colorScheme.primary.withOpacity(0.18)
-        : Theme.of(context).colorScheme.surface.withOpacity(0.18);
+        ? Theme.of(context).colorScheme.primary.withAlpha((0.18 * 255).round())
+        : Theme.of(context).colorScheme.surface.withAlpha((0.18 * 255).round());
 
     return Material(
       color: bg,
@@ -600,13 +672,13 @@ class _BottomBar extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
         decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.98),
+          color: Theme.of(context).scaffoldBackgroundColor.withAlpha((0.98 * 255).round()),
           // ✅ İnce border yerine çok hafif üst gölge
           boxShadow: [
             BoxShadow(
               blurRadius: 22,
               offset: const Offset(0, -8),
-              color: Colors.black.withOpacity(0.30),
+              color: Colors.black.withAlpha((0.30 * 255).round()),
             ),
           ],
         ),
@@ -646,9 +718,22 @@ class _BottomBar extends StatelessWidget {
               child: ElevatedButton(
                 onPressed: enabled ? onAddToCart : null,
                 style: ElevatedButton.styleFrom(
+                  backgroundColor: enabled ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor.withAlpha((0.2 * 255).round()),
+                  foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: enabled ? 8 : 0,
+                  shadowColor: enabled ? Theme.of(context).colorScheme.primary.withAlpha((0.4 * 255).round()) : Colors.transparent,
                 ),
-                child: Text(buttonText, style: const TextStyle(fontWeight: FontWeight.w900)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (enabled) ...[
+                      const Icon(Icons.shopping_cart_rounded, size: 18),
+                      const SizedBox(width: 8),
+                    ],
+                    Text(buttonText, style: const TextStyle(fontWeight: FontWeight.w900)),
+                  ],
+                ),
               ),
             ),
           ],
@@ -666,7 +751,7 @@ class _BottomBar extends StatelessWidget {
         height: 34,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          color: Theme.of(context).colorScheme.surface.withOpacity(0.18),
+          color: Theme.of(context).colorScheme.surface.withAlpha((0.18 * 255).round()),
         ),
         child: Icon(icon, size: 18),
       ),

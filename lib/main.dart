@@ -1,18 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'src/app.dart';
 import 'src/state/cart_store.dart';
 import 'src/state/app_store.dart';
+import 'src/state/auth_store.dart';
+import 'src/core/supabase_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ Supabase init (URL + ANON KEY senin projenden)
-   await Supabase.initialize(
-    url: 'https://flfdwmxegeyegblrjjya.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZsZmR3bXhlZ2V5ZWdibHJqanlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTYwMTEsImV4cCI6MjA4MTk5MjAxMX0.-2ZBw8VPI_9YwAXnXh4Qjfj7czWRs0EHf2nKU_0Dk04',
+  // Load environment (optional)
+  bool envLoaded = false;
+  try {
+    // Explicit filename prevents some NotInitializedError edge cases
+    await dotenv.load(fileName: '.env');
+    envLoaded = true;
+  } catch (_) {
+    envLoaded = false;
+  }
+
+  final supabaseUrl =
+      (envLoaded && dotenv.isInitialized) ? dotenv.env['SUPABASE_URL'] : null;
+  final supabaseAnonKey =
+      (envLoaded && dotenv.isInitialized) ? dotenv.env['SUPABASE_ANON_KEY'] : null;
+
+  await Supabase.initialize(
+    url: supabaseUrl ?? SupabaseConfig.url,
+    anonKey: supabaseAnonKey ?? SupabaseConfig.anonKey,
   );
 
   runApp(
@@ -20,6 +37,7 @@ Future<void> main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => CartStore()),
         ChangeNotifierProvider(create: (_) => AppStore()),
+        ChangeNotifierProvider(create: (_) => AuthStore()),
       ],
       child: const MyApp(),
     ),

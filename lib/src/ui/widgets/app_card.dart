@@ -18,7 +18,7 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = color ?? Theme.of(context).colorScheme.surface.withOpacity(0.20);
+    final bg = color ?? Theme.of(context).colorScheme.surface.withAlpha((0.20 * 255).round());
 
     return Material(
       color: Colors.transparent,
@@ -39,7 +39,7 @@ class AppCard extends StatelessWidget {
                 blurRadius: 18,
                 spreadRadius: 0,
                 offset: const Offset(0, 10),
-                color: Colors.black.withOpacity(0.25),
+                color: Colors.black.withAlpha((0.25 * 255).round()),
               ),
             ],
           ),

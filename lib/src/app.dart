@@ -13,6 +13,7 @@ class App extends StatelessWidget {
     );
 
     return MaterialApp(
+      title: 'WellFud',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       theme: ThemeData(
@@ -30,20 +31,20 @@ class App extends StatelessWidget {
           fillColor: const Color(0xFF151521),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.10)),
+            borderSide: BorderSide(color: Colors.white.withAlpha((0.10 * 255).round())),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.10)),
+            borderSide: BorderSide(color: Colors.white.withAlpha((0.10 * 255).round())),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide(color: scheme.primary.withOpacity(0.55)),
+            borderSide: BorderSide(color: scheme.primary.withAlpha((0.55 * 255).round())),
           ),
         ),
 
         // Kartlarda “beyaz çizgi” hissi veren border’ı global yumuşat
-        dividerColor: Colors.white.withOpacity(0.08),
+        dividerColor: Colors.white.withAlpha((0.08 * 255).round()),
       ),
       home: const AppShell(),
     );

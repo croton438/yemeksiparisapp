@@ -215,13 +215,13 @@ class _SearchPageState extends State<SearchPage> {
                     color: Theme.of(context)
                         .colorScheme
                         .surface
-                        .withOpacity(0.92),
+                        .withAlpha((0.92 * 255).round()),
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
                         blurRadius: 30,
                         offset: const Offset(0, -10),
-                        color: Colors.black.withOpacity(0.45),
+                        color: Colors.black.withAlpha((0.45 * 255).round()),
                       ),
                     ],
                   ),
@@ -235,7 +235,7 @@ class _SearchPageState extends State<SearchPage> {
                           height: 5,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(999),
-                            color: Colors.white.withOpacity(0.12),
+                            color: Colors.white.withAlpha((0.12 * 255).round()),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -370,7 +370,7 @@ class _SearchPageState extends State<SearchPage> {
                   color: Theme.of(context)
                       .colorScheme
                       .surface
-                      .withOpacity(0.18),
+                      .withAlpha((0.18 * 255).round()),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -420,7 +420,7 @@ class _SearchPageState extends State<SearchPage> {
                     color: Theme.of(context)
                         .colorScheme
                         .surface
-                        .withOpacity(0.18),
+                        .withAlpha((0.18 * 255).round()),
                     child: TextField(
                       controller: _search,
                       onChanged: (_) => setState(() {}),
@@ -596,7 +596,7 @@ class _SheetTile extends StatelessWidget {
     return AppCard(
       radius: BorderRadius.circular(18),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      color: Theme.of(context).colorScheme.surface.withOpacity(0.12),
+      color: Theme.of(context).colorScheme.surface.withAlpha((0.12 * 255).round()),
       child: Row(
         children: [
           Expanded(
@@ -639,7 +639,7 @@ class _SheetBlock extends StatelessWidget {
     return AppCard(
       radius: BorderRadius.circular(18),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      color: Theme.of(context).colorScheme.surface.withOpacity(0.12),
+      color: Theme.of(context).colorScheme.surface.withAlpha((0.12 * 255).round()),
       child: Column(
         children: [
           Row(
@@ -671,8 +671,8 @@ class _ChipPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = selected
-        ? Theme.of(context).colorScheme.primary.withOpacity(0.22)
-        : Theme.of(context).colorScheme.surface.withOpacity(0.16);
+        ? Theme.of(context).colorScheme.primary.withAlpha((0.22 * 255).round())
+        : Theme.of(context).colorScheme.surface.withAlpha((0.16 * 255).round());
 
     return Material(
       color: bg,
@@ -710,8 +710,8 @@ class _SortPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = selected
-        ? Theme.of(context).colorScheme.primary.withOpacity(0.18)
-        : Theme.of(context).colorScheme.surface.withOpacity(0.14);
+        ? Theme.of(context).colorScheme.primary.withAlpha((0.18 * 255).round())
+        : Theme.of(context).colorScheme.surface.withAlpha((0.14 * 255).round());
 
     return Material(
       color: bg,
@@ -737,7 +737,7 @@ class _SortPill extends StatelessWidget {
   }
 }
 
-class _GridCard extends StatelessWidget {
+class _GridCard extends StatefulWidget {
   final Restaurant restaurant;
   final String cuisine;
   final bool isOpen;
@@ -751,104 +751,161 @@ class _GridCard extends StatelessWidget {
   });
 
   @override
+  State<_GridCard> createState() => _GridCardState();
+}
+
+class _GridCardState extends State<_GridCard> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AppCard(
-      onTap: onTap,
-      radius: BorderRadius.circular(22),
-      padding: EdgeInsets.zero,
-      color: Theme.of(context).colorScheme.surface.withOpacity(0.14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: CachedImg(
-                      url: restaurant.heroImageUrl,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 900,
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withOpacity(0.05),
-                            Colors.black.withOpacity(0.55),
-                          ],
+    return GestureDetector(
+      onTapDown: (_) => _controller.forward(),
+      onTapUp: (_) {
+        _controller.reverse();
+        widget.onTap();
+      },
+      onTapCancel: () => _controller.reverse(),
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: AppCard(
+          onTap: widget.onTap,
+          radius: BorderRadius.circular(22),
+          padding: EdgeInsets.zero,
+          color: Theme.of(context).colorScheme.surface.withAlpha((0.14 * 255).round()),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: CachedImg(
+                          url: widget.restaurant.heroImageUrl,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 900,
                         ),
                       ),
-                    ),
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withAlpha((0.05 * 255).round()),
+                                Colors.black.withAlpha((0.55 * 255).round()),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 10,
+                        top: 10,
+                        child: _StatusPill(isOpen: widget.isOpen),
+                      ),
+                    ],
                   ),
-                  Positioned(
-                    left: 10,
-                    top: 10,
-                    child: _StatusPill(isOpen: isOpen),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (cuisine.isNotEmpty)
-                  Text(
-                    cuisine,
-                    style: TextStyle(
-                      color: Theme.of(context).hintColor,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                Text(
-                  restaurant.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
-                const SizedBox(height: 8),
-                Row(
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.star_rounded, size: 16),
-                    const SizedBox(width: 4),
+                    if (widget.cuisine.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          color: Theme.of(context).colorScheme.primary.withAlpha((0.15 * 255).round()),
+                        ),
+                        child: Text(
+                          widget.cuisine,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    if (widget.cuisine.isNotEmpty) const SizedBox(height: 6),
                     Text(
-                      restaurant.rating.toStringAsFixed(1),
+                      widget.restaurant.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
-                    const Spacer(),
-                    Text(
-                      'Min. ${restaurant.minOrderTl} ₺',
-                      style: TextStyle(
-                        color: Theme.of(context).hintColor,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
+                        const SizedBox(width: 4),
+                        Text(
+                          widget.restaurant.rating.toStringAsFixed(1),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(6),
+                            color: Theme.of(context).colorScheme.surface.withAlpha((0.3 * 255).round()),
+                          ),
+                          child: Text(
+                            'Min. ${widget.restaurant.minOrderTl} ₺',
+                            style: TextStyle(
+                              color: Theme.of(context).hintColor,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.access_time_rounded, size: 14, color: Theme.of(context).hintColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${widget.restaurant.minDeliveryMin}-${widget.restaurant.maxDeliveryMin} dk',
+                          style: TextStyle(
+                            color: Theme.of(context).hintColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  '${restaurant.minDeliveryMin}-${restaurant.maxDeliveryMin} dk',
-                  style: TextStyle(
-                    color: Theme.of(context).hintColor,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -873,7 +930,7 @@ class _ListRowCard extends StatelessWidget {
       onTap: onTap,
       radius: BorderRadius.circular(20),
       padding: const EdgeInsets.all(12),
-      color: Theme.of(context).colorScheme.surface.withOpacity(0.14),
+      color: Theme.of(context).colorScheme.surface.withAlpha((0.14 * 255).round()),
       child: Row(
         children: [
           ClipRRect(
@@ -967,7 +1024,7 @@ class _StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final bg =
-        isOpen ? cs.primary.withOpacity(0.22) : cs.surface.withOpacity(0.22);
+        isOpen ? cs.primary.withAlpha((0.22 * 255).round()) : cs.surface.withAlpha((0.22 * 255).round());
     final fg = isOpen ? cs.primary : Theme.of(context).hintColor;
 
     return Container(
@@ -998,7 +1055,7 @@ class _SearchSkeleton extends StatelessWidget {
           height: h,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            color: Theme.of(context).colorScheme.surface.withOpacity(0.18),
+            color: Theme.of(context).colorScheme.surface.withAlpha((0.18 * 255).round()),
           ),
         );
 
@@ -1044,7 +1101,7 @@ class _SearchSkeleton extends StatelessWidget {
           itemBuilder: (_, __) => AppCard(
             radius: BorderRadius.circular(22),
             padding: const EdgeInsets.all(12),
-            color: Theme.of(context).colorScheme.surface.withOpacity(0.14),
+            color: Theme.of(context).colorScheme.surface.withAlpha((0.14 * 255).round()),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

@@ -58,7 +58,7 @@ class _SettingsPageState extends State<SettingsPage> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Theme.of(context).dividerColor),
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.25),
+        color: Theme.of(context).colorScheme.surface.withAlpha((0.25 * 255).round()),
       ),
       child: Row(
         children: [
@@ -97,7 +97,7 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.35),
+        color: Theme.of(context).colorScheme.surface.withAlpha((0.35 * 255).round()),
         border: Border.all(color: Theme.of(context).dividerColor),
       ),
       child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
@@ -109,8 +109,8 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Theme.of(context).colorScheme.error.withOpacity(0.4)),
-        color: Theme.of(context).colorScheme.error.withOpacity(0.10),
+        border: Border.all(color: Theme.of(context).colorScheme.error.withAlpha((0.4 * 255).round())),
+        color: Theme.of(context).colorScheme.error.withAlpha((0.10 * 255).round()),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -134,7 +134,7 @@ class _SettingsPageState extends State<SettingsPage> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Theme.of(context).dividerColor),
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.20),
+        color: Theme.of(context).colorScheme.surface.withAlpha((0.20 * 255).round()),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -17,7 +17,7 @@ class AppImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = Theme.of(context).colorScheme.surface.withOpacity(0.35);
+    final bg = Theme.of(context).colorScheme.surface.withAlpha((0.35 * 255).round());
 
     return CachedNetworkImage(
       imageUrl: url,

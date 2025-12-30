@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../data/mock_data.dart';
+import '../../data/restaurant_service.dart';
+import '../../data/product_service.dart';
+import '../../data/category_service.dart';
 import '../../models/models.dart';
 import '../../state/cart_store.dart';
 import '../sheets/product_customize_sheet.dart';
@@ -21,40 +23,73 @@ class RestaurantPage extends StatefulWidget {
 }
 
 class _RestaurantPageState extends State<RestaurantPage> {
-  late Restaurant restaurant;
-  late List<Category> cats;
+  Restaurant? restaurant;
+  List<Category> cats = [];
+  List<Product> _allProducts = [];
+  List<Product> _popularProducts = [];
+  Map<String, List<Product>> _productsByCategory = {};
 
   final _menuSearch = TextEditingController();
   final _scrollController = ScrollController();
 
   // Anchors
   final _popularKey = GlobalKey();
-  late final Map<String, GlobalKey> _categoryKeys;
+  Map<String, GlobalKey> _categoryKeys = {};
 
   // Active highlight
   String _activeSectionId = '__popular__';
   Timer? _scrollDebounce;
 
-  // ✅ Cache
-  late final List<Product> _allProducts;
-  late final List<Product> _popularProducts;
-  late final Map<String, List<Product>> _productsByCategory;
+  // Loading state
+  bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    restaurant = MockData.restaurantById(widget.restaurantId);
-    cats = MockData.categoriesForRestaurant(restaurant.id);
-
-    _categoryKeys = {for (final c in cats) c.id: GlobalKey()};
-
-    _allProducts = MockData.productsForRestaurant(restaurant.id);
-    _popularProducts = _allProducts.where((p) => p.isPopular).toList();
-    _productsByCategory = {
-      for (final c in cats) c.id: _allProducts.where((p) => p.categoryId == c.id).toList(),
-    };
-
+    _loadRestaurantData();
     _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _loadRestaurantData() async {
+    try {
+      // Restaurant bilgisini çek
+      final restaurants = await RestaurantService.getRestaurants();
+      final found = restaurants.firstWhere(
+        (r) => r.id == widget.restaurantId,
+        orElse: () => restaurants.first,
+      );
+
+      // Categories ve Products'ı paralel çek
+      final results = await Future.wait([
+        CategoryService.getCategoriesByRestaurant(widget.restaurantId),
+        ProductService.getProductsByRestaurant(widget.restaurantId),
+      ]);
+
+      final categories = results[0] as List<Category>;
+      final products = results[1] as List<Product>;
+
+      if (mounted) {
+        setState(() {
+          restaurant = found;
+          cats = categories;
+          _allProducts = products;
+          _popularProducts = products.take(5).toList(); // İlk 5 ürünü popüler olarak göster
+          _categoryKeys = {for (final c in cats) c.id: GlobalKey()};
+          _productsByCategory = {
+            for (final c in cats) c.id: products.where((p) => p.categoryId == c.id).toList(),
+          };
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -141,8 +176,66 @@ class _RestaurantPageState extends State<RestaurantPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+                const SizedBox(height: 16),
+                Text(
+                  'Yükleniyor...',
+                  style: TextStyle(color: Theme.of(context).hintColor),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_error != null || restaurant == null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Theme.of(context).colorScheme.error),
+                const SizedBox(height: 16),
+                Text(
+                  'Restoran yüklenemedi',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _error ?? 'Bilinmeyen hata',
+                  style: TextStyle(color: Theme.of(context).hintColor),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _isLoading = true;
+                      _error = null;
+                    });
+                    _loadRestaurantData();
+                  },
+                  child: const Text('Tekrar Dene'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final cart = context.watch<CartStore>();
-    final showCartBar = !cart.isEmpty && cart.restaurant?.id == restaurant.id;
+    final showCartBar = !cart.isEmpty && cart.restaurant?.id == restaurant!.id;
 
     final q = _menuSearch.text;
     final hasQuery = q.trim().isNotEmpty;
@@ -155,7 +248,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           child: Topbar(
-            title: restaurant.name,
+            title: restaurant!.name,
             leading: IconButton(
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.arrow_back),
@@ -166,7 +259,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
                 clipBehavior: Clip.none,
                 children: [
                   const Icon(Icons.shopping_bag_outlined),
-                  if (!cart.isEmpty && cart.restaurant?.id == restaurant.id)
+                  if (!cart.isEmpty && cart.restaurant?.id == restaurant!.id)
                     Positioned(
                       right: -6,
                       top: -6,
@@ -194,12 +287,12 @@ class _RestaurantPageState extends State<RestaurantPage> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: AppCard(
             radius: BorderRadius.circular(22),
-            color: Theme.of(context).colorScheme.surface.withOpacity(0.18),
+            color: Theme.of(context).colorScheme.surface.withAlpha((0.18 * 255).round()),
             onTap: null,
             child: AspectRatio(
               aspectRatio: 16 / 8.5,
               child: CachedImg(
-                url: restaurant.heroImageUrl,
+                url: restaurant!.heroImageUrl,
                 fit: BoxFit.cover,
                 memCacheWidth: 1200,
               ),
@@ -212,7 +305,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Text(
-            'Min. ${restaurant.minOrderTl} ₺ • ${restaurant.eta} • ${restaurant.rating.toStringAsFixed(1)}',
+            'Min. ${restaurant!.minOrderTl} ₺ • ${restaurant!.eta} • ${restaurant!.rating.toStringAsFixed(1)}',
             style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w700),
           ),
         ),
@@ -297,7 +390,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
                   onTap: () async {
                     await ProductCustomizeSheet.open(
                       context: context,
-                      restaurant: restaurant,
+                      restaurant: restaurant!,
                       product: p,
                     );
                   },
@@ -333,12 +426,12 @@ class _RestaurantPageState extends State<RestaurantPage> {
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: _MenuCard(
-                restaurant: restaurant,
+                restaurant: restaurant!,
                 product: p,
                 onAdd: () async {
                   await ProductCustomizeSheet.open(
                     context: context,
-                    restaurant: restaurant,
+                    restaurant: restaurant!,
                     product: p,
                   );
                 },
@@ -359,7 +452,7 @@ class _RestaurantPageState extends State<RestaurantPage> {
     return Scaffold(
       bottomNavigationBar: showCartBar
           ? _RestaurantCartBar(
-              restaurant: restaurant,
+              restaurant: restaurant!,
               onTap: () => CartSheet.open(context),
             )
           : null,
@@ -387,7 +480,7 @@ class _CategoryHeader extends StatelessWidget {
         Container(
           height: 1,
           width: double.infinity,
-          color: Theme.of(context).dividerColor.withOpacity(0.75),
+          color: Theme.of(context).dividerColor.withAlpha((0.75 * 255).round()),
         ),
       ],
     );
@@ -449,7 +542,7 @@ class _StickyItem {
   const _StickyItem({required this.id, required this.title, required this.icon});
 }
 
-class _PopularProductCard extends StatelessWidget {
+class _PopularProductCard extends StatefulWidget {
   final Product product;
   final VoidCallback onTap;
 
@@ -459,64 +552,125 @@ class _PopularProductCard extends StatelessWidget {
   });
 
   @override
+  State<_PopularProductCard> createState() => _PopularProductCardState();
+}
+
+class _PopularProductCardState extends State<_PopularProductCard> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 240,
-      child: AppCard(
-        onTap: onTap,
-        radius: BorderRadius.circular(20),
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.20),
-        padding: const EdgeInsets.all(10),
-        child: Row(
-          children: [
-            CachedImg(
-              url: product.imageUrl,
-              width: 78,
-              height: 78,
-              fit: BoxFit.cover,
-              memCacheWidth: 260,
-              memCacheHeight: 260,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+    return GestureDetector(
+      onTapDown: (_) => _controller.forward(),
+      onTapUp: (_) {
+        _controller.reverse();
+        widget.onTap();
+      },
+      onTapCancel: () => _controller.reverse(),
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: SizedBox(
+          width: 240,
+          child: AppCard(
+            onTap: widget.onTap,
+            radius: BorderRadius.circular(20),
+            color: Theme.of(context).colorScheme.surface.withAlpha((0.20 * 255).round()),
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              children: [
+                Hero(
+                  tag: 'product_${widget.product.id}',
+                  child: CachedImg(
+                    url: widget.product.imageUrl,
+                    width: 78,
+                    height: 78,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 260,
+                    memCacheHeight: 260,
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    product.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600),
-                  ),
-                  const Spacer(),
-                  Row(
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${product.priceTl},99 TL', style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.product.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(6),
+                              color: Theme.of(context).colorScheme.primary.withAlpha((0.2 * 255).round()),
+                            ),
+                            child: Icon(Icons.local_fire_department_rounded, size: 12, color: Theme.of(context).colorScheme.primary),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        widget.product.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600, fontSize: 12),
+                      ),
                       const Spacer(),
-                      Container(
-                        height: 30,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text('Ekle', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black)),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              color: Theme.of(context).colorScheme.primary.withAlpha((0.15 * 255).round()),
+                            ),
+                            child: Text('${widget.product.priceTl},99 TL', style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary, fontSize: 13)),
+                          ),
+                          const Spacer(),
+                          Container(
+                            height: 32,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            alignment: Alignment.center,
+                            child: const Text('Ekle', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black, fontSize: 12)),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -546,7 +700,7 @@ class _RestaurantCartBar extends StatelessWidget {
         child: AppCard(
           onTap: onTap,
           radius: BorderRadius.circular(18),
-          color: Theme.of(context).colorScheme.surface.withOpacity(0.40),
+          color: Theme.of(context).colorScheme.surface.withAlpha((0.40 * 255).round()),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
@@ -555,7 +709,7 @@ class _RestaurantCartBar extends StatelessWidget {
                 height: 42,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.18),
+                  color: Theme.of(context).colorScheme.primary.withAlpha((0.18 * 255).round()),
                 ),
                 child: const Icon(Icons.shopping_bag_outlined),
               ),
@@ -601,7 +755,7 @@ class _RestaurantCartBar extends StatelessWidget {
   }
 }
 
-class _MenuCard extends StatelessWidget {
+class _MenuCard extends StatefulWidget {
   final Restaurant restaurant;
   final Product product;
   final VoidCallback onAdd;
@@ -613,61 +767,136 @@ class _MenuCard extends StatelessWidget {
   });
 
   @override
+  State<_MenuCard> createState() => _MenuCardState();
+}
+
+class _MenuCardState extends State<_MenuCard> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.98).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AppCard(
-      onTap: onAdd,
-      radius: BorderRadius.circular(22),
-      color: Theme.of(context).colorScheme.surface.withOpacity(0.22),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.only(topLeft: Radius.circular(22), bottomLeft: Radius.circular(22)),
-            child: CachedImg(
-              url: product.imageUrl,
-              width: 92,
-              height: 92,
-              fit: BoxFit.cover,
-              memCacheWidth: 300,
-              memCacheHeight: 300,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(product.name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 6),
-                  Text(
-                    product.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600),
+    return GestureDetector(
+      onTapDown: (_) => _controller.forward(),
+      onTapUp: (_) {
+        _controller.reverse();
+        widget.onAdd();
+      },
+      onTapCancel: () => _controller.reverse(),
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: AppCard(
+          onTap: widget.onAdd,
+          radius: BorderRadius.circular(22),
+          color: Theme.of(context).colorScheme.surface.withAlpha((0.22 * 255).round()),
+          child: Row(
+            children: [
+              Hero(
+                tag: 'product_${widget.product.id}',
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(22), bottomLeft: Radius.circular(22)),
+                  child: CachedImg(
+                    url: widget.product.imageUrl,
+                    width: 92,
+                    height: 92,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 300,
+                    memCacheHeight: 300,
                   ),
-                  const SizedBox(height: 8),
-                  Text('${product.priceTl},99 TL', style: const TextStyle(fontWeight: FontWeight.w900)),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: SizedBox(
-              height: 36,
-              child: OutlinedButton(
-                onPressed: onAdd,
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  side: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.55)),
                 ),
-                child: const Text('Ekle', style: TextStyle(fontWeight: FontWeight.w900)),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(widget.product.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+                          ),
+                          if (widget.product.isPopular)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                color: Theme.of(context).colorScheme.primary.withAlpha((0.2 * 255).round()),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.local_fire_department_rounded, size: 12, color: Theme.of(context).colorScheme.primary),
+                                  const SizedBox(width: 2),
+                                  Text('Popüler', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary)),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        widget.product.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Theme.of(context).hintColor, fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(10),
+                            color: Theme.of(context).colorScheme.primary.withAlpha((0.15 * 255).round()),
+                            ),
+                            child: Text('${widget.product.priceTl},99 TL', style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: SizedBox(
+                  height: 40,
+                  child: FilledButton(
+                    onPressed: widget.onAdd,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                    child: const Text('Ekle', style: TextStyle(fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

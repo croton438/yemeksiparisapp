@@ -52,7 +52,7 @@ class _PlaceholderBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = Theme.of(context).colorScheme.surface.withOpacity(0.35);
+    final base = Theme.of(context).colorScheme.surface.withAlpha((0.35 * 255).round());
 
     return Container(
       width: width,
@@ -76,7 +76,7 @@ class _ErrorBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = Theme.of(context).colorScheme.surface.withOpacity(0.35);
+    final base = Theme.of(context).colorScheme.surface.withAlpha((0.35 * 255).round());
 
     return Container(
       width: width,

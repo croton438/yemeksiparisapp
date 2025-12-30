@@ -4,3 +4,6 @@ export 'category.dart';
 export 'product.dart';
 export 'cart.dart';
 export 'address.dart';
+export 'profile.dart';
+export 'order.dart';
+export 'order_item.dart';

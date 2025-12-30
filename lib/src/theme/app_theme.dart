@@ -45,11 +45,11 @@ class AppTheme {
         fillColor: const Color(0xFF10101A),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: scheme.outlineVariant.withOpacity(0.45)),
+          borderSide: BorderSide(color: scheme.outlineVariant.withAlpha((0.45 * 255).round())), 
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: scheme.outlineVariant.withOpacity(0.35)),
+          borderSide: BorderSide(color: scheme.outlineVariant.withAlpha((0.35 * 255).round())),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),

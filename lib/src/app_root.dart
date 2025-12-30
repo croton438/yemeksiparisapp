@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../state/cart_store.dart';
-import 'shell/app_shell.dart';
+import 'state/cart_store.dart';
+import 'ui/shell/app_shell.dart';
 
 class AppRoot extends StatelessWidget {
   const AppRoot({super.key});
